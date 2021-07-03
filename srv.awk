@@ -16,24 +16,27 @@ BEGIN{
 	if("" == fifo || system("test -p " fifo))
 		error("set a fifo")
 
+	recv=fifo
 	host="localhost"
 	port="8000"
 
-	# for netcat of Ubuntu (OpenBSD variant)
-	recv=sprintf("nc -lNC %s %s > %s", host, port, fifo)
-	# for macOS
-	# recv=sprintf("nc -lc %s %s > %s", host, port, fifo)
+	# - send a message
+	#   print MESSAGE | conn
+	# - receive a data
+	#   getline < recv
+	conn=sprintf("nc -l %s %s > %s", host, port, recv)
 
 	for(;;){
 		# reset
 		i=1
+		# "delete ARR" is not standardized in POSIX awk.
 		delete header
-		# run recv
-		printf "" | recv
 
-		#debugMsg("fflush(recv) done")
+		# run netcat
+		printf "" | conn
+
 		for(;;){
-			if(getline data < fifo)
+			if(getline data < recv)
 				if("\r" == data)
 					break
 				else{
@@ -43,10 +46,10 @@ BEGIN{
 			else
 				break
 		}
-		handle(header, recv)
-		close(fifo)
+		handle(conn, header)
 		close(recv)
-		#debugMsg("close(recv) done")
+		close(conn)
+		# debugMsg("close(conn) done")
 	}
 }
 
@@ -55,20 +58,30 @@ function error(msg){
 	print "usage: " Usage | Stderr
 	exit(1)
 }
+
+# use only in debugging
 function debugMsg(msg){
 	print "# debug: " msg | Stderr
+	# "fflush()" is not standardized in POSIX awk.
 	fflush(Stderr)
 }
 
-function handle(header, to,    urlPath, arr){
+# send a message to "to"
+function send(to, msg){
+	print msg | to
+}
+
+function handle(to, header,     urlPath, arr){
 	split(header[1], arr)
 	urlPath=arr[2]
 	sub(/\//, "", urlPath)
 
-	print "HTTP/1.1 200 OK" | to
-	print "" | to
-	print "<html>" | to
-	print "<head><title>" urlPath "</title></head>" | to
-	print "<body><h1>" urlPath "</h1></body>" | to
-	print "</html>" | to
+	send(to, "HTTP/1.1 200 OK\r")
+	send(to, "Content-Type: text/html; charset=UTF-8\r")
+	send(to, "Connection: close\r")
+	send(to, "\r")
+	send(to, "<html>\r")
+	send(to, "<head><title>" urlPath "</title></head>\r")
+	send(to, "<body><h1>" urlPath "</h1></body>\r")
+	send(to, "</html>\r")
 }
